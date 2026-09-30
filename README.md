@@ -2,8 +2,7 @@
 
 Public repository: https://github.com/ngallodev-software/jev-decision-support · MIT license.
 
-[Skill and API call templates](skills/jev-decision-support/SKILL.md) ·
-[Candidate assessment and proof limits](docs/CANDIDATE_REVIEW.md)
+[Skill and API call templates](skills/jev-decision-support/SKILL.md)
 
 `makeJevDecision(context, question, acceptable_answers)` calls the official TypeSafe
 SDK and returns the full Jev API result set. Choice is the default; Noul and Score
