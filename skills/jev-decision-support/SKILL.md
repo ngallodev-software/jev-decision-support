@@ -1,5 +1,5 @@
 ---
-name: use-jev
+name: jev-decision-support
 description: Use Jev API calls to help the agent decide among plausible alternatives, judge evidence sufficiency, or assess semantic risk while doing a task. Includes a callable makeJevDecision helper and Choice, Noul, and Score templates. Use for bounded semantic decisions, not exact lookups, calculations, tests, or generating code and prose.
 ---
 

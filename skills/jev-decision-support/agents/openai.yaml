@@ -1,0 +1,4 @@
+interface:
+  display_name: "Jev Decision Support"
+  short_description: "Ask Jev for a bounded semantic decision"
+  default_prompt: "Use $jev-decision-support to evaluate a bounded decision with context, a question, and acceptable answers."

@@ -10,7 +10,7 @@ Source inspected on 2026-09-30; benchmark checkout was clean and remains unmodif
 The candidate correctly distinguishes the agent's decisions from product integration,
 gates calls on a material semantic ambiguity, provides a valid Choice question map,
 keeps deterministic evidence authoritative, excludes secrets, and discourages repeated
-unchanged judgments. These principles are retained in `skills/use-jev/SKILL.md`.
+unchanged judgments. These principles are retained in `skills/jev-decision-support/SKILL.md`.
 
 It assumes a host-side `jev_system_one` tool. That tool is defined by
 `benchmarking/agentic_jev.py:jev_bridged_tool`, which delegates to
