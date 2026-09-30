@@ -1,0 +1,120 @@
+"""Offline contract check: real SDK, mocked HTTP, no credentials or network."""
+
+import io
+import json
+import unittest
+from contextlib import redirect_stderr, redirect_stdout
+from unittest.mock import patch
+
+import httpx2
+from typesafe_sdk import RetryPolicy, TypeSafeAPIError, TypeSafeClient
+
+import jev_decision
+from jev_decision import makeJevDecision
+
+
+class DecisionCheck(unittest.TestCase):
+    def setUp(self):
+        self.requests = []
+        self.status = 200
+        self.answer = {"type": "choice", "choice": "reuse", "confidence": 0.8,
+                       "probabilities": {"reuse": 0.9, "replace": 0.1}}
+
+        def handle(request):
+            self.requests.append(json.loads(request.content))
+            self.assertEqual(request.url.path, "/v1/systemone")
+            return httpx2.Response(self.status, json={
+                "model": "fixture", "answers": {"decision": self.answer},
+                "usage": {"input_tokens": 12, "output_tokens": 4},
+            })
+
+        self.client = TypeSafeClient(api_key="offline-test", base_url="https://fixture.invalid",
+                                     transport=httpx2.MockTransport(handle),
+                                     retry=RetryPolicy(max_retries=0))
+        self.addCleanup(self.client.close)
+
+    def call(self, **kwargs):
+        return makeJevDecision({"fact": "existing helper"}, "Which option fits?",
+                               client=self.client, **kwargs)
+
+    def test_primitives_and_request_contract(self):
+        result = self.call(acceptable_answers=["reuse", "replace"], model="jev-latest")
+        self.assertEqual(result["answers"]["decision"], self.answer)
+        self.assertEqual(result["usage"]["input_tokens"], 12)
+        self.assertEqual(len(self.requests), 1)
+        self.assertEqual(self.requests[0], {
+            "state": {"fact": "existing helper"}, "model": "jev-latest",
+            "questions": {"decision": {"type": "choice", "instructions": "Which option fits?",
+                                       "criteria": {"reuse": None, "replace": None}}},
+        })
+        self.call(acceptable_answers={"reuse": "Extend", "replace": "Replace"})
+        self.assertEqual(self.requests[-1]["questions"]["decision"]["criteria"],
+                         {"reuse": "Extend", "replace": "Replace"})
+        self.answer = {"type": "noul", "noul": 0.7}
+        self.assertEqual(self.call(kind="noul")["answers"]["decision"]["noul"], 0.7)
+        self.answer = {"type": "score", "score": 0.25, "confidence": 0.5,
+                       "probabilities": {"0": 0.75, "1": 0.25},
+                       "legend": {"0": "low", "1": "high"}}
+        self.assertEqual(self.call(kind="score", acceptable_answers=["low", "high"])
+                         ["answers"]["decision"]["legend"], {"0": "low", "1": "high"})
+
+    def test_input_rejected_before_network(self):
+        for kwargs in [
+            {"acceptable_answers": []}, {"acceptable_answers": ["a", "a"]},
+            {"acceptable_answers": ["a", 2]}, {"acceptable_answers": {"": None, "b": None}},
+            {"kind": "score", "acceptable_answers": ["one"]},
+            {"kind": "noul", "acceptable_answers": ["yes", "no"]}, {"kind": "bogus"},
+        ]:
+            with self.subTest(kwargs=kwargs), self.assertRaises(ValueError):
+                self.call(**kwargs)
+        for context, question in [("x", " "), ({"n": float("nan")}, "x"), ("x" * 65536, "x")]:
+            with self.assertRaises(ValueError):
+                makeJevDecision(context, question, ["a", "b"], client=self.client)
+        self.assertEqual(self.requests, [])
+
+    def test_bad_answers_and_service_failure(self):
+        original = self.answer.copy()
+        for changes in [{"choice": "unlisted"}, {"confidence": 2},
+                        {"probabilities": {"reuse": 0.6, "replace": 0.1}},
+                        {"probabilities": {"reuse": 0.9, "unknown": 0.1}},
+                        {"type": "noul", "noul": 0.8}]:
+            self.answer = {**original, **changes}
+            with self.subTest(changes=changes), self.assertRaises(ValueError):
+                self.call(acceptable_answers=["reuse", "replace"])
+        self.status = 401
+        with self.assertRaises(TypeSafeAPIError):
+            self.call(acceptable_answers=["reuse", "replace"])
+        self.status = 200
+        self.answer = {"type": "noul", "noul": 1.1}
+        with self.assertRaises(ValueError):
+            self.call(kind="noul")
+        self.answer = {"type": "score", "score": 2, "confidence": 0.5,
+                       "probabilities": {"0": 0.5, "1": 0.5},
+                       "legend": {"0": "low", "1": "high"}}
+        with self.assertRaises(ValueError):
+            self.call(kind="score", acceptable_answers=["low", "high"])
+
+    def test_cli_json_and_private_error_handling(self):
+        request = {"context": "x", "question": "Which?", "acceptable_answers": ["reuse", "replace"]}
+        original = makeJevDecision
+
+        def inject(**kwargs):
+            return original(**kwargs, client=self.client)
+
+        output = io.StringIO()
+        with patch.object(jev_decision, "makeJevDecision", side_effect=inject), \
+                patch("sys.argv", ["jev_decision.py"]), \
+                patch("sys.stdin", io.StringIO(json.dumps(request))), redirect_stdout(output):
+            self.assertEqual(jev_decision.main(), 0)
+        self.assertEqual(json.loads(output.getvalue())["model"], "fixture")
+        errors = io.StringIO()
+        with patch.object(jev_decision, "makeJevDecision", side_effect=RuntimeError("PRIVATE BODY")), \
+                patch("sys.argv", ["jev_decision.py"]), \
+                patch("sys.stdin", io.StringIO(json.dumps(request))), redirect_stderr(errors):
+            self.assertEqual(jev_decision.main(), 1)
+        self.assertEqual(json.loads(errors.getvalue()), {"status": "error", "error_type": "RuntimeError"})
+        self.assertNotIn("PRIVATE", errors.getvalue())
+
+
+if __name__ == "__main__":
+    unittest.main()
