@@ -4,6 +4,7 @@ import io
 import json
 import unittest
 from contextlib import redirect_stderr, redirect_stdout
+from types import SimpleNamespace
 from unittest.mock import patch
 
 import httpx2
@@ -114,6 +115,15 @@ class DecisionCheck(unittest.TestCase):
             self.assertEqual(jev_decision.main(), 1)
         self.assertEqual(json.loads(errors.getvalue()), {"status": "error", "error_type": "RuntimeError"})
         self.assertNotIn("PRIVATE", errors.getvalue())
+
+    def test_missing_or_malformed_answer_data(self):
+        for body in [None, [], {}, {"answers": []}, {"answers": {}},
+                     {"answers": {"decision": []}}]:
+            response = SimpleNamespace(raw_http_response=httpx2.Response(200, content=json.dumps(body)))
+            with self.subTest(body=body), \
+                    patch.object(self.client, "system_one", return_value=response), \
+                    self.assertRaisesRegex(ValueError, "missing or malformed"):
+                self.call(acceptable_answers=["reuse", "replace"])
 
 
 if __name__ == "__main__":

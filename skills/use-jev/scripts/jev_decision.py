@@ -54,7 +54,10 @@ def makeJevDecision(context, question, acceptable_answers=None, *, kind="choice"
                                    kind=kind, model=model, client=owned_client)
     response = client.system_one(state=context, questions={"decision": spec}, model=model)
     result = response.raw_http_response.json()
-    answer = result["answers"]["decision"]
+    answers = result.get("answers") if isinstance(result, dict) else None
+    answer = answers.get("decision") if isinstance(answers, dict) else None
+    if not isinstance(answer, dict):
+        raise ValueError("Jev returned missing or malformed answer data")
     if answer.get("type") != kind:
         raise ValueError("Jev returned the wrong answer type")
 

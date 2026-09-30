@@ -1,6 +1,6 @@
 # Use Jev skill
 
-Public repository: https://github.com/ngallodev-software/use-dev-skill · MIT license.
+Public repository: https://github.com/ngallodev-software/jev-decision-support · MIT license.
 
 [Skill and API call templates](skills/use-jev/SKILL.md) ·
 [Candidate assessment and proof limits](docs/CANDIDATE_REVIEW.md)

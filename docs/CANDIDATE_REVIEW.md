@@ -41,7 +41,8 @@ existence does not establish that those gates passed or that decisions improved.
 Live references checked: https://docs.typesafe.ai/sdk/python.md,
 https://docs.typesafe.ai/api.md, https://docs.typesafe.ai/sdk/python/usage.md.
 
-Validation: four offline unittest checks and the skill-creator frontmatter validator
-passed. CodeRabbit 0.8.2 could not review this newly initialized repository because
-it has no HEAD commit; no CodeRabbit cleanliness claim is made. Source inspection
-and offline contract checks provide the validation for this implementation.
+Validation: five offline unittest checks and the skill-creator frontmatter validator
+passed. CodeRabbit 0.8.2 initially could not review the repository without a HEAD
+commit. After public publication, its full committed-diff review completed with one
+minor finding: malformed answer data needed an explicit ValueError guard. The guard
+and a regression check were added. No paid usage credits were enabled.
