@@ -4,11 +4,13 @@ Public repository: https://github.com/ngallodev-software/jev-decision-support ·
 
 [Skill and API call templates](skills/jev-decision-support/SKILL.md)
 
-`makeJevDecision(context, question, acceptable_answers)` calls the official TypeSafe
-SDK and returns the full Jev API result set. Choice is the default; Noul and Score
+`makeJevDecision(context, question, acceptable_answers)` and the batch
+`makeJevDecisions(context, questions)` call the official TypeSafe
+SDK and return the full Jev API result set. Choice is the default; Noul and Score
 are also supported. The helper is in `skills/jev-decision-support/scripts/jev_decision.py`.
 
-Install `typesafe-sdk` in the Python environment and configure `TYPESAFE_API_KEY`
+Run the helper with `uv run --no-project --with typesafe-sdk python ...` (or install
+`typesafe-sdk` in the Python environment) and configure `TYPESAFE_API_KEY`
 through your usual runtime secrets mechanism. For Codex discovery, link this
 repository's `skills/jev-decision-support` directory into `~/.codex/skills/jev-decision-support`.
 

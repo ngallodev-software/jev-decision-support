@@ -2,6 +2,7 @@
 
 import io
 import json
+import os
 import unittest
 from contextlib import redirect_stderr, redirect_stdout
 from types import SimpleNamespace
@@ -11,7 +12,7 @@ import httpx2
 from typesafe_sdk import RetryPolicy, TypeSafeAPIError, TypeSafeClient
 
 import jev_decision
-from jev_decision import makeJevDecision
+from jev_decision import makeJevDecision, makeJevDecisions
 
 
 class DecisionCheck(unittest.TestCase):
@@ -124,6 +125,115 @@ class DecisionCheck(unittest.TestCase):
                     patch.object(self.client, "system_one", return_value=response), \
                     self.assertRaisesRegex(ValueError, "missing or malformed"):
                 self.call(acceptable_answers=["reuse", "replace"])
+
+
+class BatchCheck(unittest.TestCase):
+    QUESTIONS = {
+        "best": {"type": "choice", "instructions": "Which fits?",
+                 "criteria": {"reuse": "Extend", "replace": "Replace"}},
+        "supported": {"type": "noul", "instructions": "Is the claim supported?"},
+        "risk": {"type": "score", "instructions": "How risky?", "criteria": ["low", "high"]},
+    }
+
+    def setUp(self):
+        self.requests = []
+        self.answers = {
+            "best": {"type": "choice", "choice": "reuse", "confidence": 0.8,
+                     "probabilities": {"reuse": 0.9, "replace": 0.1}},
+            "supported": {"type": "noul", "noul": 0.7},
+            "risk": {"type": "score", "score": 0.25, "confidence": 0.5,
+                     "probabilities": {"0": 0.75, "1": 0.25}, "legend": {"0": "low", "1": "high"}},
+        }
+
+        def handle(request):
+            self.requests.append(json.loads(request.content))
+            return httpx2.Response(200, json={"model": "fixture", "answers": self.answers,
+                                              "usage": {"input_tokens": 1, "output_tokens": 1}})
+
+        self.client = TypeSafeClient(api_key="offline-test", base_url="https://fixture.invalid",
+                                     transport=httpx2.MockTransport(handle),
+                                     retry=RetryPolicy(max_retries=0))
+        self.addCleanup(self.client.close)
+
+    def call(self, questions=None, context="evidence"):
+        return makeJevDecisions(context, self.QUESTIONS if questions is None else questions,
+                                client=self.client)
+
+    def test_batch_single_request(self):
+        result = self.call()
+        self.assertEqual(result["answers"], self.answers)
+        self.assertEqual(result["model"], "fixture")
+        self.assertEqual(len(self.requests), 1)
+        self.assertEqual(self.requests[0]["questions"], self.QUESTIONS)
+        self.assertEqual(self.requests[0]["state"], "evidence")
+
+    def test_batch_bad_answers(self):
+        original = {k: dict(v) for k, v in self.answers.items()}
+        for name, changes in [("missing", None), ("best", {"type": "noul", "noul": 0.5}),
+                              ("best", {"probabilities": {"reuse": 0.6, "replace": 0.1}}),
+                              ("best", {"choice": "unlisted"}), ("supported", {"noul": 2}),
+                              ("risk", {"score": 5})]:
+            self.answers = {k: dict(v) for k, v in original.items()}
+            if changes is None:
+                del self.answers["risk"]
+            else:
+                self.answers[name].update(changes)
+            with self.subTest(name=name, changes=changes), self.assertRaises(ValueError):
+                self.call()
+
+    def test_batch_input_rejected_before_network(self):
+        bad = [{}, [], {"": {"type": "noul", "instructions": "x"}}, {"q": "x"},
+               {"q": {"type": "noul", "instructions": " "}},
+               {"q": {"type": "bogus", "instructions": "x"}},
+               {"q": {"type": "choice", "instructions": "x", "criteria": ["only"]}},
+               {"q": {"type": "noul", "instructions": "x", "criteria": ["a", "b"]}}]
+        for questions in bad:
+            with self.subTest(questions=questions), self.assertRaises(ValueError):
+                self.call(questions)
+        with self.assertRaises(ValueError):
+            self.call(context="x" * 65536)
+        self.assertEqual(self.requests, [])
+
+    def test_missing_api_key_fails_before_network(self):
+        env = {k: v for k, v in os.environ.items() if k != "TYPESAFE_API_KEY"}
+        with patch.dict(os.environ, env, clear=True), \
+                patch("typesafe_sdk.TypeSafeClient") as owned:
+            for call in (lambda: makeJevDecision("x", "Which?", ["a", "b"]),
+                         lambda: makeJevDecisions("x", BatchCheck.QUESTIONS)):
+                with self.assertRaises(RuntimeError) as caught:
+                    call()
+                self.assertEqual(str(caught.exception), "TYPESAFE_API_KEY is not set")
+            owned.assert_not_called()
+        with patch.dict(os.environ, {**env, "TYPESAFE_API_KEY": ""}, clear=True), \
+                self.assertRaises(RuntimeError):
+            makeJevDecision("x", "Which?", ["a", "b"])
+
+    def test_timeout_reaches_owned_client(self):
+        with patch.dict(os.environ, {"TYPESAFE_API_KEY": "offline-test"}), \
+                patch("typesafe_sdk.TypeSafeClient") as owned:
+            owned.return_value.__enter__.return_value = self.client
+            makeJevDecisions("x", self.QUESTIONS, timeout=90)
+            owned.assert_called_once_with(timeout=90)
+
+    def test_cli_routes_questions_to_batch(self):
+        request = {"context": "x", "questions": self.QUESTIONS}
+        original = makeJevDecisions
+
+        def inject(**kwargs):
+            return original(**kwargs, client=self.client)
+
+        output = io.StringIO()
+        with patch.object(jev_decision, "makeJevDecisions", side_effect=inject), \
+                patch("sys.argv", ["jev_decision.py"]), \
+                patch("sys.stdin", io.StringIO(json.dumps(request))), redirect_stdout(output):
+            self.assertEqual(jev_decision.main(), 0)
+        self.assertEqual(json.loads(output.getvalue())["answers"], self.answers)
+        errors = io.StringIO()
+        with patch.object(jev_decision, "makeJevDecisions", side_effect=RuntimeError("PRIVATE BODY")), \
+                patch("sys.argv", ["jev_decision.py"]), \
+                patch("sys.stdin", io.StringIO(json.dumps(request))), redirect_stderr(errors):
+            self.assertEqual(jev_decision.main(), 1)
+        self.assertEqual(json.loads(errors.getvalue()), {"status": "error", "error_type": "RuntimeError"})
 
 
 if __name__ == "__main__":
