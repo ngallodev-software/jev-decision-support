@@ -28,7 +28,17 @@ When asking Jev to judge a change or review, include:
 - verification results with scope: what ran, counts, and what was not exercised;
 - any prior Jev answer and what changed since.
 
-Thin context gives muddy distributions; add the missing evidence before re-asking.
+Context moves answers far more than the artifact does. In one controlled case
+(a real code-review question, `jev-1.13.0`, 5 calls per arm), rich context raised
+spec-fit from about 0.35 to 0.89 and cut P(needs_changes) from about 0.49 to 0.18.
+Swapping a commit that failed its type checker for the fixed commit changed almost
+nothing. Sharper is not more correct: Jev judges the evidence you project, so a
+defect that only an unrun check would reveal stays invisible. Run deterministic
+checks (tests, type checker, linters) yourself; Jev does not replace them.
+
+Answers also shifted by about 0.1, and a top choice flipped, when only the JSON key
+order changed. Keep the context and question order fixed when comparing calls, and
+do not over-read the second decimal of a single call.
 
 ## Call makeJevDecision
 
