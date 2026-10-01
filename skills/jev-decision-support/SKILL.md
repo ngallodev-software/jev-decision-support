@@ -25,8 +25,37 @@ When asking Jev to judge a change or review, include:
 
 - the requirement source verbatim (issue or maintainer text, spec), not a paraphrase;
 - the diff, plus the unchanged code it depends on;
-- verification results with scope: what ran, counts, and what was not exercised;
-- any prior Jev answer and what changed since.
+- deterministic tool output verbatim with scope (tests, type checker, linters):
+  what ran, counts, failures, and what was not exercised.
+
+### Keep your own judgments out of the evidence
+
+Jev scores the context you send, so anything you assert moves its answer as if it
+were evidence. Send primary evidence and leave your conclusions out:
+
+- Do not state your preferred answer or confidence ("I think this is ready"). In
+  live tests one unlabeled sentence claiming a serious defect flipped a correct
+  commit from ready to needs_changes (P(needs_changes) 0.19 to 0.87).
+- Notes, summaries, and verdicts written by other agents (an implementer's hand-off,
+  a reviewer's summary) are claims too. Leave them out, and never file them under
+  tool output: tool-output keys are for what a tool printed.
+- Do not include earlier Jev answers by default; a prior "ready" answer pulled a
+  defective commit further toward ready. Include one only when the question is
+  whether something changed since that answer.
+- Do not summarize what code, tests, or tools say when you can send them verbatim;
+  your summary can be wrong in ways Jev cannot see. Verbatim tool output is the
+  strongest input measured: a real type-checker failure moved P(needs_changes) from
+  0.21 to 0.98, and a confident claim that it was a false positive barely moved it.
+- If you must pass on something only you observed (a probe, a debugging finding),
+  put it under a separate key such as `agent_observations`, each entry with its
+  source and basis, for example `{"claim": "...", "basis": "manual probe, not
+  independently verified"}`. Labeling reduced a false claim's effect by about
+  two-thirds, not entirely; leaving it out is safer.
+- When the question is about your own proposal, the proposal is the object being
+  judged: send it under a key such as `proposal_by_agent`, with the arguments for
+  it and the evidence against it, and offer the alternatives as answer options. Ask
+  it in its own call: a proposal added to a batch also shifted the batch's unrelated
+  questions.
 
 Context moves answers far more than the artifact does. In one controlled case
 (a real code-review question, `jev-1.13.0`, 5 calls per arm), rich context raised

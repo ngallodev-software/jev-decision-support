@@ -74,6 +74,18 @@ class DecisionCheck(unittest.TestCase):
                 makeJevDecision(context, question, ["a", "b"], client=self.client)
         self.assertEqual(self.requests, [])
 
+    def test_two_decimal_rounding_accepted(self):
+        # Observed live: four options rounded to two decimals summing to 0.99.
+        options = ["ready", "ready_minor", "needs_changes", "insufficient_evidence"]
+        self.answer = {"type": "choice", "choice": "ready", "confidence": 0.41,
+                       "probabilities": {"ready_minor": 0.23, "insufficient_evidence": 0.0,
+                                         "ready": 0.56, "needs_changes": 0.2}}
+        self.assertEqual(self.call(acceptable_answers=options)["answers"]["decision"]["choice"], "ready")
+        self.answer["probabilities"] = {"ready_minor": 0.23, "insufficient_evidence": 0.0,
+                                        "ready": 0.5, "needs_changes": 0.2}
+        with self.assertRaises(ValueError):
+            self.call(acceptable_answers=options)
+
     def test_bad_answers_and_service_failure(self):
         original = self.answer.copy()
         for changes in [{"choice": "unlisted"}, {"confidence": 2},

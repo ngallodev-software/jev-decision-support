@@ -55,9 +55,12 @@ def _validate_answer(kind, criteria, answer):
         return
     allowed = set(criteria) if kind == "choice" else {str(i) for i in range(len(criteria))}
     probabilities = answer.get("probabilities")
+    # The API rounds each probability to two decimals, so the sum can miss 1 by up
+    # to 0.005 per option (e.g. 0.56 + 0.23 + 0.20 + 0.00 = 0.99).
     if (not isinstance(probabilities, dict) or set(probabilities) != allowed
             or not all(number(v, 0, 1) for v in probabilities.values())
-            or not math.isclose(sum(probabilities.values()), 1, abs_tol=1e-5)
+            or not math.isclose(sum(probabilities.values()), 1,
+                                abs_tol=0.005 * len(allowed) + 1e-9)
             or not number(answer.get("confidence"), 0, 1)):
         raise ValueError("Jev returned an invalid answer distribution")
     if kind == "choice" and answer.get("choice") not in allowed:
