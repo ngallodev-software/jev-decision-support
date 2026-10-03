@@ -1,4 +1,4 @@
 interface:
   display_name: "Jev Decision Support"
-  short_description: "Ask Jev for a bounded semantic decision"
-  default_prompt: "Use $jev-decision-support to evaluate a bounded decision with context, a question, and acceptable answers."
+  short_description: "Build and use bounded Jev decisions"
+  default_prompt: "Use $jev-decision-support to collect primary evidence, build a deterministic validated Jev request, batch independent judgments over shared state, and only rebuild after materially new evidence or changed alternatives."
