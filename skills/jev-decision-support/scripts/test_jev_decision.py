@@ -12,7 +12,12 @@ import httpx2
 from typesafe_sdk import RetryPolicy, TypeSafeAPIError, TypeSafeClient
 
 import jev_decision
-from jev_decision import makeJevDecision, makeJevDecisions
+from jev_decision import (
+    buildJevRequest,
+    makeJevDecision,
+    makeJevDecisions,
+    rebuildJevRequest,
+)
 
 
 class DecisionCheck(unittest.TestCase):
@@ -73,6 +78,95 @@ class DecisionCheck(unittest.TestCase):
             with self.assertRaises(ValueError):
                 makeJevDecision(context, question, ["a", "b"], client=self.client)
         self.assertEqual(self.requests, [])
+
+    def test_deterministic_request_builder_hashes_and_revisions(self):
+        questions = {
+            "best": {
+                "type": "choice",
+                "instructions": "Which option best fits the evidence?",
+                "criteria": {
+                    "reuse": "Extend the helper",
+                    "replace": "Replace the helper",
+                    "insufficient_evidence": "Need more evidence",
+                },
+            },
+            "supported": {
+                "type": "noul",
+                "instructions": "Is the evidence sufficient to choose?",
+                "criteria": {
+                    "true": "The supplied evidence is sufficient",
+                    "false": "Material evidence is still missing",
+                },
+            },
+        }
+        first = buildJevRequest(
+            {"requirement": "Preserve compatibility", "evidence": ["existing helper"]},
+            questions,
+            model="jev-latest",
+            purpose="Choose between bounded alternatives.",
+        )
+        same = buildJevRequest(
+            {"requirement": "Preserve compatibility", "evidence": ["existing helper"]},
+            questions,
+            model="jev-latest",
+            purpose="Choose between bounded alternatives.",
+        )
+        self.assertEqual(first["request_sha256"], same["request_sha256"])
+        self.assertEqual(first["decision_sha256"], same["decision_sha256"])
+        self.assertEqual(len(first["request_sha256"]), 64)
+        self.assertGreater(first["sizes"]["state_bytes"], 0)
+        self.assertGreater(first["sizes"]["questions_bytes"], 0)
+
+        with self.assertRaisesRegex(ValueError, "semantically unchanged"):
+            rebuildJevRequest(
+                first,
+                {"requirement": "Preserve compatibility", "evidence": ["existing helper"]},
+                questions,
+                model="jev-latest",
+                purpose="Choose between bounded alternatives.",
+                change_reason="No actual evidence change.",
+            )
+
+        revised = rebuildJevRequest(
+            first,
+            {
+                "requirement": "Preserve compatibility",
+                "evidence": ["existing helper", "migration test passed"],
+            },
+            questions,
+            model="jev-latest",
+            purpose="Choose between bounded alternatives.",
+            change_reason="Added migration-test evidence.",
+        )
+        self.assertNotEqual(revised["decision_sha256"], first["decision_sha256"])
+        self.assertEqual(
+            revised["revision"]["previous_decision_sha256"],
+            first["decision_sha256"],
+        )
+        self.assertEqual(
+            revised["revision"]["change_reason"],
+            "Added migration-test evidence.",
+        )
+
+    def test_builder_rejects_empty_context_and_invalid_revision_metadata(self):
+        questions = {
+            "supported": {
+                "type": "noul",
+                "instructions": {"task": "Is the supplied evidence sufficient?"},
+            }
+        }
+        for context in ("", {}, []):
+            with self.subTest(context=context), self.assertRaises(ValueError):
+                buildJevRequest(context, questions)
+        with self.assertRaisesRegex(ValueError, "change_reason"):
+            buildJevRequest("evidence", questions, change_reason="changed")
+        with self.assertRaisesRegex(ValueError, "lowercase SHA-256"):
+            buildJevRequest(
+                "evidence",
+                questions,
+                previous_decision_sha256="not-a-hash",
+                change_reason="changed evidence",
+            )
 
     def test_two_decimal_rounding_accepted(self):
         # Observed live: four options rounded to two decimals summing to 0.99.
