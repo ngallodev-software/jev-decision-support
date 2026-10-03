@@ -246,6 +246,26 @@ def _validate_answer(kind, criteria, answer):
         raise ValueError("Jev returned a score outside the rubric")
 
 
+def executeJevRequest(built, *, client=None, timeout=30):
+    """Execute a previously built request after re-verifying its immutable identity."""
+    if not isinstance(built, dict) or not isinstance(built.get("request"), dict):
+        raise ValueError("built Jev request must be a builder record")
+    request = built["request"]
+    if set(request) != {"state", "questions", "model"}:
+        raise ValueError("built Jev request has an invalid provider request shape")
+    expected = {
+        "request_sha256": _sha256_json(request),
+        "decision_sha256": _sha256_json(
+            {"state": request["state"], "questions": request["questions"]}
+        ),
+        "state_sha256": _sha256_json(request["state"]),
+        "questions_sha256": _sha256_json(request["questions"]),
+    }
+    if any(built.get(name) != value for name, value in expected.items()):
+        raise ValueError("built Jev request changed after validation")
+    return _send_built_request(built, client, timeout)
+
+
 def _send_built_request(built, client, timeout):
     request = built["request"]
     if client is None:
@@ -272,7 +292,7 @@ def _send_built_request(built, client, timeout):
 def _decide(context, specs, model, client, timeout):
     """Compatibility path: build, send one system_one call, validate every answer."""
     built = buildJevRequest(context, specs, model=model)
-    return _send_built_request(built, client, timeout)
+    return executeJevRequest(built, client=client, timeout=timeout)
 
 
 def makeJevDecision(context, question, acceptable_answers=None, *, kind="choice",
