@@ -14,6 +14,7 @@ from typesafe_sdk import RetryPolicy, TypeSafeAPIError, TypeSafeClient
 import jev_decision
 from jev_decision import (
     buildJevRequest,
+    executeJevRequest,
     makeJevDecision,
     makeJevDecisions,
     rebuildJevRequest,
@@ -147,6 +148,27 @@ class DecisionCheck(unittest.TestCase):
             revised["revision"]["change_reason"],
             "Added migration-test evidence.",
         )
+
+    def test_execute_built_request_rejects_post_validation_mutation(self):
+        built = buildJevRequest(
+            {"fact": "existing helper"},
+            {
+                "decision": {
+                    "type": "choice",
+                    "instructions": "Which option fits?",
+                    "criteria": {"reuse": "Extend", "replace": "Replace"},
+                }
+            },
+            model="jev-latest",
+        )
+        result = executeJevRequest(built, client=self.client)
+        self.assertEqual(result["answers"]["decision"], self.answer)
+        self.assertEqual(self.requests[-1], built["request"])
+
+        tampered = json.loads(json.dumps(built))
+        tampered["request"]["state"]["fact"] = "changed after validation"
+        with self.assertRaisesRegex(ValueError, "changed after validation"):
+            executeJevRequest(tampered, client=self.client)
 
     def test_builder_rejects_empty_context_and_invalid_revision_metadata(self):
         questions = {
